@@ -90,20 +90,20 @@ ggplot(tmp, aes(datetime, demand_MWHR, group = period_name) ) +
 
 
 ## Reduce to df containing prime and prime2
-model <- smooth.spline(x = tmp$datetime, y=tmp$demand_MWHR, df = 6 * ndays)
-model.prime <-  predict(model, deriv = 1)
-model.prime2 <- predict(model, deriv = 2)
-df_model <- data.frame(
+my_spline <- smooth.spline(x = tmp$datetime, y=tmp$demand_MWHR, df = 6 * ndays)
+prime <-  predict(my_spline, deriv = 1)
+prime2 <- predict(my_spline, deriv = 2)
+df_spline <- data.frame(
   datetime = tmp$datetime,
   demand_MWHR = tmp$demand_MWHR,
   x = model.prime$x,
-  y_prm  = model.prime$y,
-  y_prm2 = model.prime2$y
+  y_prm  = prime$y,
+  y_prm2 = prime2$y
 )
-# plot(x = df_model$datetime, y = df_model$demand_MWHR)
-# plot(x = df_model$datetime, y = df_model$y.prm, type = "l")
+# plot(x = df_spline$datetime, y = df_spline$demand_MWHR)
+# plot(x = df_spline$datetime, y = df_spline$y.prm, type = "l")
 # abline(h=0)
-# plot(x = df_model$datetime, y = df_model$y.prm2, type = "l")
+# plot(x = df_spline$datetime, y = df_spline$y.prm2, type = "l")
 # abline(h=0)
 
 ## Solve for the zero crossing (roots)
@@ -114,44 +114,74 @@ POSIXct2AEST <- function(POSIXct){
     tz = "Australia/Melbourne")
 }
 
-roots_y_prm <- approxfun(df_model$x, df_model$y_prm) %>% 
+roots_y_prm <- approxfun(df_spline$x, df_spline$y_prm) %>% 
   ## find roots for out approximate function
-  uniroot.all(interval = range(df_model$x)) %>%
+  uniroot.all(interval = range(df_spline$x)) #%>%
   ## Convert POSIXct int to datetime [AEST]
-  POSIXct2AEST()
+  # POSIXct2AEST()
 
-roots_y_prm2 <- approxfun(df_model$x, df_model$y_prm2) %>% 
+roots_y_prm2 <- approxfun(df_spline$x, df_spline$y_prm2) %>% 
   ## find roots for out approximate function
-  uniroot.all(interval = range(df_model$x)) %>%
-  ## Convert POSIXct int to datetime [AEST]
-  POSIXct2AEST()
+  uniroot.all(interval = range(df_spline$x))
+  #%>%
+  # ## Convert POSIXct int to datetime [AEST]
+  # POSIXct2AEST()
 ## Remove first and last pts
 roots_y_prm2 <- roots_y_prm2[2:(length(roots_y_prm2)-1)]
+## Estimate the demand at the roots of y prime^2
+#### TODO I DON'T THINK THIS IS RIGHT.
+roots_est_demand <- predict(my_spline, x = roots_y_prm2)
+
 roots_y_prm
-roots_y_prm2 
-## moring set is 2 to 3, 6 to 7, 10 to 11, (4 apart)
-## evening offset is 5 to 6, 9 to 10, (4 apart)
+roots_y_prm2
+roots_est_demand
+
 
 ## Plot the peaks and valleies.
-ggplot(df_model, aes(datetime, y_prm) ) +
+ggplot(data.frame(roots_est_demand), aes(POSIXct2AEST(x), y) ) +
   geom_line() +
   geom_vline(xintercept = roots_y_prm2)
 
 ## Find the indices for morning onset and evening offset
-nroots <- length(roots_y_prm2)
-morning_ind <- sort(c(
-  seq(from = 1, to = nroots, by = 4) + 1,
-  seq(from = 1, to = nroots, by = 4) + 2
-))
-evening_ind <- sort(c(
-  seq(from = 1, to = nroots, by = 4),
-  seq(from = 1, to = nroots, by = 4) + 1
-))
+evening_srt_ind <- seq(from = 1, to = nroots, by = 4)
+## moring set is 2 to 3, 6 to 7, 10 to 11, (4 apart)
+## evening offset is 5 to 6, 9 to 10, (4 apart)
+## Evening offset is to this +1,
+## Morning onset is this+1 to this+2
+full_ind <- sort(c(evening_srt_ind, evening_srt_ind + 1, evening_srt_ind + 2))
+
+## All idecies needed
+df_roots_prm2 <- data.frame(datetime = POSIXct2AEST(roots_est_demand$x[full_ind]),
+                            est_demand = roots_est_demand$y[full_ind])
+nr <- nrow(df_roots_prm2)
+name <- rep(c("Evening high", "Nightly low", "Morning high"), length.out = nr)
+name <-  c("Evening high", "Nightly low", "Morning high")
+name[.ind]
+df_roots_prm2 %>% 
+  mutate(yr = year(datetime),
+         mo = month(datetime),
+         dd = day(datetime),
+         yr_mo_dd = as_datetime(paste(yr, mo, dd, sep = "-"), 
+                                tz = "Australia/Melbourne"),
+         name = rep(c("Evening high", "Nightly low", "Morning high"), length.out = nr)
+  ) %>% select(yr_mo_dd, name, est_demand) %>%
+  pivot_wider(names_from = name, values_from = est_demand) %>% 
+  mutate(evening_diff = `Evening high` - `Nightly low`,
+         morning_diff = `Morning high` - `Nightly low`)
+  
+# u_yrmodd <- data.frame(yrmodd = unique(tmp$yr_mo_dd))
+# .df_name <-data.frame(
+#   name = rep(c("Evening high", "Nightly low", "Morning high"), 
+#              lenght.out = nrow(fj)))
+# fj <- full_join(u_yrmodd, .df_name, by = character())
+# fj$est_demand_MWHR <- roots_est_demand$y
+# tib_demand <- select(fj, -ind) %>% 
+#   pivot_wider(names_from = name, values_from = est_demand_MWHR, values_fn = {mean}) %>% 
+#   mutate(evening_diff = `Evening high` - `Nightly low`
+#          morning_diff = 
 
 ## Find the duration
-npairs <- floor(min(length(morning_ind), length(evening_ind))/2)
-for(i in 1:npairs){
-  
-}
+
+data.frame(u_yrmodd, )
 
 
