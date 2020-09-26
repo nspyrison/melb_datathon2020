@@ -54,14 +54,104 @@ skimr::skim(dat)
 
 
 #### 1 day example
-tmp <- dat[dat$yr_mo_dd == "2020-08-01", ]
-str(tmp)
-ggplot(data = tmp, aes(x = datetime, y = demand_MWHR, group = period_name)) + 
+tmp <- dat[dat$yr_mo_dd > "2019-08-01" & dat$yr_mo_dd < "2019-08-08", ]
+# str(tmp)
+ggplot(data = tmp, aes(x = datetime, y = demand_MWHR, group = period_name)) +
   geom_line()
 
 
+
 ### SEARCH FOR polynomial fit -----
-if(F)
-  browseURL("http://www.sthda.com/english/articles/40-regression-analysis/162-nonlinear-regression-essentials-in-r-polynomial-and-spline-regression-models/")
-?poly
+if(F){
+  browseURL("http://www.sthda.com/english/articles/40-regression-analysis/162-nonlinear-regression-essentials-in-r-polynomial-and-spline-regression-models/#spline-regression")
+  ?smooth.spline
+}
+## With knots
+# knots <- quantile(tmp$datetime, p = 1:7/8)
+# model <- lm(tmp$demand_MWHR ~ bs(tmp$datetime, knots = knots), data = tmp)
+## Without knots
+# model <- lm(tmp$demand_MWHR ~ bs(tmp$datetime, df = 7), data = tmp)
+# model$coefficients
+
+#### TMP dat smooth.spline
+library(splines)
+set.seed(123)
+## Build the spline model
+
+## View as plot, with split (7 df per day)
+ndays <- length(unique(tmp$yr_mo_dd))
+ggplot(tmp, aes(datetime, demand_MWHR, group = period_name) ) +
+  geom_line() +
+  stat_smooth(method = lm, formula = y ~ splines::bs(x, df = 6 * ndays))
+ 
+## Add the poly nomial eq
+# library(ggpmisc)
+# stat_poly_eq(parse = T, aes(label = ..eq.label..), formula = y ~ splines::bs(x, df = 7))
+
+
+## Reduce to df containing prime and prime2
+model <- smooth.spline(x = tmp$datetime, y=tmp$demand_MWHR, df = 6 * ndays)
+model.prime <-  predict(model, deriv = 1)
+model.prime2 <- predict(model, deriv = 2)
+df_model <- data.frame(
+  datetime = tmp$datetime,
+  demand_MWHR = tmp$demand_MWHR,
+  x = model.prime$x,
+  y_prm  = model.prime$y,
+  y_prm2 = model.prime2$y
+)
+# plot(x = df_model$datetime, y = df_model$demand_MWHR)
+# plot(x = df_model$datetime, y = df_model$y.prm, type = "l")
+# abline(h=0)
+# plot(x = df_model$datetime, y = df_model$y.prm2, type = "l")
+# abline(h=0)
+
+## Solve for the zero crossing (roots)
+library(rootSolve)
+POSIXct2AEST <- function(POSIXct){
+  as_datetime(
+    as.POSIXct(POSIXct, origin = "1970-01-01", tz = "Australia/Melbourne"),
+    tz = "Australia/Melbourne")
+}
+
+roots_y_prm <- approxfun(df_model$x, df_model$y_prm) %>% 
+  ## find roots for out approximate function
+  uniroot.all(interval = range(df_model$x)) %>%
+  ## Convert POSIXct int to datetime [AEST]
+  POSIXct2AEST()
+
+roots_y_prm2 <- approxfun(df_model$x, df_model$y_prm2) %>% 
+  ## find roots for out approximate function
+  uniroot.all(interval = range(df_model$x)) %>%
+  ## Convert POSIXct int to datetime [AEST]
+  POSIXct2AEST()
+## Remove first and last pts
+roots_y_prm2 <- roots_y_prm2[2:(length(roots_y_prm2)-1)]
+roots_y_prm
+roots_y_prm2 
+## moring set is 2 to 3, 6 to 7, 10 to 11, (4 apart)
+## evening offset is 5 to 6, 9 to 10, (4 apart)
+
+## Plot the peaks and valleies.
+ggplot(df_model, aes(datetime, y_prm) ) +
+  geom_line() +
+  geom_vline(xintercept = roots_y_prm2)
+
+## Find the indices for morning onset and evening offset
+nroots <- length(roots_y_prm2)
+morning_ind <- sort(c(
+  seq(from = 1, to = nroots, by = 4) + 1,
+  seq(from = 1, to = nroots, by = 4) + 2
+))
+evening_ind <- sort(c(
+  seq(from = 1, to = nroots, by = 4),
+  seq(from = 1, to = nroots, by = 4) + 1
+))
+
+## Find the duration
+npairs <- floor(min(length(morning_ind), length(evening_ind))/2)
+for(i in 1:npairs){
+  
+}
+
 
