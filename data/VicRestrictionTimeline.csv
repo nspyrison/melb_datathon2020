@@ -1,4 +1,4 @@
-name	description	start	end	duration	start source
-firstcase-stage1	first AUS case thru stage 1	19/01/2020	23/03/2020	64	"https://www.health.gov.au/ministers/the-hon-greg-hunt-mp/media/first-confirmed-case-of-novel-coronavirus-in-australia#:~:text=The%20patient%2C%20a%20man%20from,these%20processes%20have%20been%20activated.%E2%80%9D"
-stages1-3	stage 1 thru end of stage 3	23/03/2020	2/08/2020	132	https://www.minterellison.com/articles/covid-19-stage-1-restrictions
-stage4-step2	stage 4 thru road map step 2 (first loosening for melb metro)	2/08/2020	28/09/2020	57	https://7news.com.au/lifestyle/health-wellbeing/stage-four-restrictions-officially-announced-in-victoria-as-coronavirus-crisis-continues-c-1210947
+name,description,start,end,duration,start source
+firstcase-stage1,first AUS case thru stage 1,19/01/2020,23/03/2020,64,https://www.health.gov.au/ministers/the-hon-greg-hunt-mp/media/first-confirmed-case-of-novel-coronavirus-in-australia#:~:text=The%20patient%2C%20a%20man%20from
+stages1-3,stage 1 thru end of stage 3,23/03/2020,2/08/2020,132,https://www.minterellison.com/articles/covid-19-stage-1-restrictions
+stage4-step2,stage 4 thru road map step 2 (first loosening for melb metro),2/08/2020,28/09/2020,57,https://7news.com.au/lifestyle/health-wellbeing/stage-four-restrictions-officially-announced-in-victoria-as-coronavirus-crisis-continues-c-1210947

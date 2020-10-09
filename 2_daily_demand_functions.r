@@ -1,6 +1,6 @@
 
 ## Setup -----
-require(tidyverse); require(lubridate);
+require(tidyverse); require(lubridate);library(ggformula)
 require(stringr); require("ggplot2"); ## Updated versions as of 20/09/2020
 set.seed(20200920)
 
@@ -24,7 +24,7 @@ dat <- dplyr::mutate(
   raw,
   .keep = "none",
   region      = as.factor(`ï..REGION`),
-  datetime    = as_datetime(dmy_hm(SETTLEMENTDATE), tz = "Australia/Melbourne"),
+  datetime    = as_datetime(dmy_hm(SETTLEMENTDATE)), #, tz = "Australia/Melbourne"),
   period_name = 
     case_when(datetime < timeline$start_ymd[1] ~ "before first AUS case (2020-01-19)",
               datetime >= timeline$start_ymd[1] &
@@ -35,13 +35,17 @@ dat <- dplyr::mutate(
                 datetime < timeline$end_ymd[3] ~ timeline$period_name[3],
               datetime > timeline$end_ymd[3] ~ "after stage4, step2 (2020-09-28)"
     ),
+  POSIXt_seconds = as.integer(datetime),
   yr_mo       = tsibble::yearmonth(datetime),
   yr          = year(datetime),
   mo          = month(datetime),
   ww          = week(datetime),
   dd          = day(datetime),
-  yr_mo_dd    = as_datetime(paste(yr, mo, dd, sep = "-"), tz = "Australia/Melbourne"),
+  yr_mo_dd    = as_datetime(paste(yr, mo, dd, sep = "-")), #tz = "Australia/Melbourne"),
   hm          = unlist(lapply(strsplit(as.character(raw$SETTLEMENTDATE), " "), FUN =  function(L) L[2])),
+  wday        = wday(datetime),
+  is_weekend  = case_when(wday %in% 1:2 ~ 1,
+                          wday %in% 3:7~ 0),
   demand_MWHR = as.numeric(TOTALDEMAND),
   price_AUD   = as.numeric(RRP),
   compkey_rp = paste0(region, ".", period_name),
@@ -49,54 +53,52 @@ dat <- dplyr::mutate(
 )
 str(dat)
 skimr::skim(dat)
+table(dat$is_weekend)
 # d <- 48*365.25 *6 ## Half hours in 6 years, but 2020, not done
 # round(100*nrow(dat)/d, 1) ## 95.1 pct of 6 years of data.
 
 
 #### 1 day example
-tmp <- dat[dat$yr_mo_dd > "2019-08-01" & dat$yr_mo_dd < "2019-08-08", ]
+tmp <- dat[dat$yr_mo_dd > "2020-08-01" & dat$yr_mo_dd < "2020-08-11", ]
+min_sec <- as.numeric(min(tmp$datetime))
+tmp$hrs_ellapsed <- (as.numeric(tmp$datetime) - min_sec) / (60 * 24 *2.5) ## why is it off by a facotr of 2.5?
+
 # str(tmp)
-ggplot(data = tmp, aes(x = datetime, y = demand_MWHR, group = period_name)) +
-  geom_line()
+# ggplot(data = tmp, aes(x = datetime, y = demand_MWHR, group = period_name)) +
+#   geom_line()
 
-
-
-### SEARCH FOR polynomial fit -----
-if(F){
-  browseURL("http://www.sthda.com/english/articles/40-regression-analysis/162-nonlinear-regression-essentials-in-r-polynomial-and-spline-regression-models/#spline-regression")
-  ?smooth.spline
-}
-## With knots
-# knots <- quantile(tmp$datetime, p = 1:7/8)
-# model <- lm(tmp$demand_MWHR ~ bs(tmp$datetime, knots = knots), data = tmp)
-## Without knots
-# model <- lm(tmp$demand_MWHR ~ bs(tmp$datetime, df = 7), data = tmp)
-# model$coefficients
 
 #### TMP dat smooth.spline
 library(splines)
+
 set.seed(123)
 ## Build the spline model
 
 ## View as plot, with split (7 df per day)
 ndays <- length(unique(tmp$yr_mo_dd))
-ggplot(tmp, aes(datetime, demand_MWHR, group = period_name) ) +
+df_s <- c(6, 12, 18, 24, 32, 48)
+tmp_crossing <- tidyr::crossing(tmp, df_s)
+ggplot(tmp_crossing, aes(datetime, demand_MWHR, group = period_name) ) +
+  geom_spline(df = df_s * ndays, color = "blue", size = 1) +
   geom_line() +
-  stat_smooth(method = lm, formula = y ~ splines::bs(x, df = 6 * ndays))
+  facet_wrap(vars(df_s))
+###
+df_root <- 6 ## 6 df per day to capture only capture roots
+df_amp <- 24 ## 24 dp per day to capture peaks and troughs better
  
-## Add the poly nomial eq
-# library(ggpmisc)
-# stat_poly_eq(parse = T, aes(label = ..eq.label..), formula = y ~ splines::bs(x, df = 7))
-
 
 ## Reduce to df containing prime and prime2
-my_spline <- smooth.spline(x = tmp$datetime, y=tmp$demand_MWHR, df = 6 * ndays)
-prime <-  predict(my_spline, deriv = 1)
-prime2 <- predict(my_spline, deriv = 2)
-df_spline <- data.frame(
+spline_root <- smooth.spline(x = tmp$datetime, y=tmp$demand_MWHR, df = df_root * ndays)
+spline_amp  <- smooth.spline(x = tmp$datetime, y=tmp$demand_MWHR, df = df_amp * ndays)
+
+est_demand <- predict(spline_amp, x = tmp$POSIXt_seconds)
+prime      <- predict(spline_root, deriv = 1)
+prime2     <- predict(spline_root, deriv = 2)
+df_spline  <- data.frame(
   datetime = tmp$datetime,
   demand_MWHR = tmp$demand_MWHR,
-  x = model.prime$x,
+  x = prime$x,
+  y_spline = est_demand$y,
   y_prm  = prime$y,
   y_prm2 = prime2$y
 )
@@ -116,43 +118,45 @@ POSIXct2AEST <- function(POSIXct){
 
 roots_y_prm <- approxfun(df_spline$x, df_spline$y_prm) %>% 
   ## find roots for out approximate function
-  uniroot.all(interval = range(df_spline$x)) #%>%
-  ## Convert POSIXct int to datetime [AEST]
-  # POSIXct2AEST()
-
+  uniroot.all(interval = range(df_spline$x))
 roots_y_prm2 <- approxfun(df_spline$x, df_spline$y_prm2) %>% 
   ## find roots for out approximate function
   uniroot.all(interval = range(df_spline$x))
-  #%>%
-  # ## Convert POSIXct int to datetime [AEST]
-  # POSIXct2AEST()
 ## Remove first and last pts
 roots_y_prm2 <- roots_y_prm2[2:(length(roots_y_prm2)-1)]
-## Estimate the demand at the roots of y prime^2
-#### TODO I DON'T THINK THIS IS RIGHT.
-roots_est_demand <- predict(my_spline, x = roots_y_prm2)
-
-roots_y_prm
-roots_y_prm2
-roots_est_demand
+roots_y_prm  ## Looking for same length
+roots_y_prm2 ## Looking for same length
 
 
-## Plot the peaks and valleies.
-ggplot(data.frame(roots_est_demand), aes(POSIXct2AEST(x), y) ) +
+## Demand with spline, and roots
+this_title <- paste0("Demand, spline (blue) w/ ", df_amp, ", roots (dots) w/ ", df_root, ", df/day (week of ", min(tmp$datetime), ")")
+ggplot(tmp, aes(datetime, demand_MWHR, group = period_name)) +
   geom_line() +
-  geom_vline(xintercept = roots_y_prm2)
+  geom_spline(df = df_amp * ndays, color = "blue", size = 1) +
+  ggtitle(this_title) +
+  geom_vline(xintercept = roots_y_prm, linetype = "dotted", size = .5) +
+  scale_x_datetime(date_breaks = "24 hours",
+                   date_minor_breaks = "12 hours",
+                   date_labels = "%y/%m/%d:%H")
 
+n_roots <- length(roots_y_prm)
 ## Find the indices for morning onset and evening offset
-evening_srt_ind <- seq(from = 1, to = nroots, by = 4)
-## moring set is 2 to 3, 6 to 7, 10 to 11, (4 apart)
-## evening offset is 5 to 6, 9 to 10, (4 apart)
+evening_srt_ind <- seq(from = 1, to = n_roots, by = 4)
+evening_end_ind <- morning_srt_ind <- evening_srt_ind + 1
+morning_end_ind <- morning_srt_ind + 1
+## morning set is 2 to 3, 6 to 7, 10 to 11, (4 apart)
+## evening offset is 1 to 2, 5 to 6, 9 to 10, (4 apart)
 ## Evening offset is to this +1,
 ## Morning onset is this+1 to this+2
-full_ind <- sort(c(evening_srt_ind, evening_srt_ind + 1, evening_srt_ind + 2))
+##TODO
+n_days <- unique(tmp$yr_mo_dd)
+evening_roots <- roots_y_prm[c(evening_srt_ind, evening_end_ind)]
+morning_roots <- roots_y_prm[c(morning_srt_ind, morning_end_ind)]
+
 
 ## All idecies needed
-df_roots_prm2 <- data.frame(datetime = POSIXct2AEST(roots_est_demand$x[full_ind]),
-                            est_demand = roots_est_demand$y[full_ind])
+df_roots_prm2 <- data.frame(datetime = POSIXct2AEST(est_demand$x[full_ind]),
+                            est_demand = est_demand$y[full_ind])
 nr <- nrow(df_roots_prm2)
 name <- rep(c("Evening high", "Nightly low", "Morning high"), length.out = nr)
 name <-  c("Evening high", "Nightly low", "Morning high")
@@ -161,10 +165,11 @@ df_roots_prm2 %>%
   mutate(yr = year(datetime),
          mo = month(datetime),
          dd = day(datetime),
-         yr_mo_dd = as_datetime(paste(yr, mo, dd, sep = "-"), 
-                                tz = "Australia/Melbourne"),
+         hm = hm(datetime),
+         yr_mo_dd = as_datetime(paste(yr, mo, dd, sep = "-")),
+                                #tz = "Australia/Melbourne"),
          name = rep(c("Evening high", "Nightly low", "Morning high"), length.out = nr)
-  ) %>% select(yr_mo_dd, name, est_demand) %>%
+  ) %>% select(yr_mo_dd, hm, name, est_demand) %>%
   pivot_wider(names_from = name, values_from = est_demand) %>% 
   mutate(evening_diff = `Evening high` - `Nightly low`,
          morning_diff = `Morning high` - `Nightly low`)
@@ -185,3 +190,12 @@ df_roots_prm2 %>%
 data.frame(u_yrmodd, )
 
 
+tmp2 <- dat[dat$yr_mo_dd > "2020-08-05" & dat$yr_mo_dd < "2020-08-7", ]
+ggplot(tmp2, aes(datetime, demand_MWHR, group = period_name)) +
+  geom_line() +
+  geom_spline(df = df_amp * ndays, color = "blue", size = 1) +
+  ggtitle(this_title) +
+  geom_vline(xintercept = roots_y_prm, linetype = "dotted", size = .5) +
+  scale_x_datetime(date_breaks = "24 hours",
+                   date_minor_breaks = "12 hours",
+                   date_labels = "%y/%m/%d:%H")
