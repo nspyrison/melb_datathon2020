@@ -47,8 +47,8 @@ dat <- dplyr::mutate(
   hm          = unlist(lapply(strsplit(as.character(raw$SETTLEMENTDATE), " "), FUN =  function(L) L[2])),
   wday        = wday(datetime),
   is_weekend  = case_when(wday %in% 1:2 ~ 1,
-                          wday %in% 3:7~ 0),
-  demand_MWHR = as.numeric(TOTALDEMAND),
+                          wday %in% 3:7 ~ 0),
+  demand_GWh = as.numeric(TOTALDEMAND) / 1000,
   price_AUD   = as.numeric(RRP),
   compkey_rp = paste0(region, ".", period_name),
   compkey_rpd = paste0(region, ".", datetime, ".", period_name)
@@ -63,7 +63,7 @@ if(F)
 
 ### CREATE THE INLAID PLOT
 inlay <-
-  ggplot(data = sub, aes(datetime, demand_MWHR, group = 1)) +
+  ggplot(data = sub, aes(datetime, demand_GWh, group = 1)) +
   geom_line() +
   # stat_peaks(geom = "text", colour = "red", hjust = -0.2, vjust = 0.5,
   #            angle = 90, check_overlap = TRUE) +
@@ -80,7 +80,7 @@ inlay <-
   #theme(axis.text.x = element_text(hjust = 1.85))
 
 inlay_tib <- tibble(x = as.POSIXct(ymd("2020-03-15")),
-                    y = 11000, ## TOP RIGHT CORNER
+                    y = 11, ## TOP RIGHT CORNER
                     plot = list(inlay +
                                   theme_bw()
                     )
@@ -90,7 +90,7 @@ inlay_tib <- tibble(x = as.POSIXct(ymd("2020-03-15")),
 n_years <- length(unique(dat$yr)) ## ~6
 ind <- which(dat$datetime == "2020-08-03 00:00:00 UTC")
 xinter <- as.numeric(dat$datetime[ind])
-ggplot(data = dat, aes(datetime, demand_MWHR, group = 1)) +
+ggplot(data = dat, aes(datetime, demand_GWh, group = 1)) +
   geom_spline(df = 3 * n_years, color = "blue", size = 1) +
   geom_line(color = "grey40", alpha = .7) +
   theme_minimal() +
@@ -101,13 +101,13 @@ ggplot(data = dat, aes(datetime, demand_MWHR, group = 1)) +
                    date_labels = "%Y") +
   ggtitle("VIC electricity demand") +
   xlab("Time") +
-  ylab("Demand (MWh)") +
+  ylab("Demand (GWh)") +
   geom_plot(data = inlay_tib, aes(x, y, label = plot)) +
   geom_vline(xintercept = xinter, linetype = "dotted", colour = "black") +
   geom_segment(x = as.POSIXct(ymd("2020-08-03")),
-               y = 5200,
+               y = 5.2,
                xend = as.POSIXct(ymd("2020-02-15")),
-               yend = 8300,
+               yend = 8.3,
                linetype = "dashed")
 
-ggsave("fig1_data_intro.png", width = 6, height = 3.73) 
+ggsave("figure_data_intro.png", width = 6, height = 3.73) 
