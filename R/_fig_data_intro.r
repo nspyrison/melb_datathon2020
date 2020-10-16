@@ -69,7 +69,7 @@ inlay <-
   #            angle = 90, check_overlap = TRUE) +
   # stat_valleys(geom = "text", colour = "blue", hjust = 1.2, vjust = 0.5,
   #              angle = 90, check_overlap = TRUE) +
-  ggtitle("3 day close up") +
+  #ggtitle("3 day close up") +
   xlab("") + ylab("") +
   scale_x_datetime(date_breaks = "24 hours",
                    date_minor_breaks = "24 hours",
@@ -99,7 +99,7 @@ ggplot(data = dat, aes(datetime, demand_GWh, group = 1)) +
   scale_x_datetime(date_breaks = "12 months",
                    date_minor_breaks = "6 months",
                    date_labels = "%Y") +
-  ggtitle("VIC electricity demand") +
+  #ggtitle("VIC electricity demand") +
   xlab("Time") +
   ylab("Demand (GWh)") +
   geom_plot(data = inlay_tib, aes(x, y, label = plot)) +
