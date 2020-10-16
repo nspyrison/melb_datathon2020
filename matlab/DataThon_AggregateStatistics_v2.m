@@ -1,8 +1,10 @@
+% Requires signal processing toolbox to run "findpeaks" function.
 clear;
 
 %Read input file
-cd 'C:\Users\madel\Documents\Documents\DataThon2020\Data Files\VIC Data By Year';
-inputdata = readtable('Data_20152020_Vic.csv');
+cd('VIC Data By Year');
+inputdata = readtable('Data_20152020_Vic.xlsx');
+cd ..
 
 %Extract needed data as arrays 
 year = year(inputdata.SETTLEMENTDATE); 
